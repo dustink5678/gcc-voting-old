@@ -48,7 +48,7 @@ const nowMs = () => Date.now();
 
 const isController = (user: User | null | undefined) => {
   if (!user) return false;
-  return user.role === 'admin' || user.role === 'regent';
+  return user.role === 'admin';
 };
 
 export const startTimer = async (

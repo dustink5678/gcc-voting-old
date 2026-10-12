@@ -1,4 +1,4 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import {
   Box,
   Button,
@@ -16,6 +16,7 @@ import {
   Stack,
   Text,
   Table,
+  Select,
   Thead,
   Tbody,
   Tr,
@@ -42,7 +43,6 @@ import {
   HStack,
   Center,
   Spinner,
-  Select,
   Menu,
   MenuButton,
   MenuList,
@@ -58,6 +58,8 @@ import {
   deleteDoc,
   getDoc,
   collection,
+  onSnapshot,
+  Unsubscribe,
 } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { User, Question } from '../types/index';
@@ -66,7 +68,75 @@ import { useData } from '../contexts/DataContext';
 
 const AdminPanel = () => {
   // Get data from context instead of fetching it
-  const { users, questions, currentQuestion, isDataLoading } = useData();
+  const { questions, currentQuestion, isDataLoading } = useData();
+
+  // Calculate vote percentages
+  const calculatePercentages = (answers: Record<string, number>) => {
+    if (!answers) return {};
+
+    const totalVotes = Object.values(answers).reduce((sum, count) => sum + count, 0);
+    if (totalVotes === 0) return {};
+
+    const percentages: Record<string, number> = {};
+    Object.entries(answers).forEach(([option, count]) => {
+      percentages[option] = Math.round((count / totalVotes) * 100);
+    });
+
+    return percentages;
+  };
+
+  // Sort questions based on selected criteria
+  const getSortedQuestions = (questions: Question[]) => {
+    return [...questions].sort((a, b) => {
+      switch (sortBy) {
+        case 'date-desc':
+          // Sort by createdAt descending (newest first)
+          const bTime = b.createdAt ? (b.createdAt as any).toMillis?.() || b.createdAt.getTime() : 0;
+          const aTime = a.createdAt ? (a.createdAt as any).toMillis?.() || a.createdAt.getTime() : 0;
+          return bTime - aTime;
+        case 'date-asc':
+          // Sort by createdAt ascending (oldest first)
+          const aTimeAsc = a.createdAt ? (a.createdAt as any).toMillis?.() || a.createdAt.getTime() : 0;
+          const bTimeAsc = b.createdAt ? (b.createdAt as any).toMillis?.() || b.createdAt.getTime() : 0;
+          return aTimeAsc - bTimeAsc;
+        case 'votes-desc':
+          // Sort by total votes descending
+          const aTotal = Object.values(a.answers || {}).reduce((sum, count) => sum + count, 0);
+          const bTotal = Object.values(b.answers || {}).reduce((sum, count) => sum + count, 0);
+          return bTotal - aTotal;
+        case 'votes-asc':
+          // Sort by total votes ascending
+          const aTotalAsc = Object.values(a.answers || {}).reduce((sum, count) => sum + count, 0);
+          const bTotalAsc = Object.values(b.answers || {}).reduce((sum, count) => sum + count, 0);
+          return aTotalAsc - bTotalAsc;
+        case 'yes-percent-desc':
+          // Sort by first option percentage descending
+          const aPercentages = calculatePercentages(a.answers || {});
+          const bPercentages = calculatePercentages(b.answers || {});
+          const aFirstOption = a.options[0] || '';
+          const bFirstOption = b.options[0] || '';
+          const aPercent = aPercentages[aFirstOption] || 0;
+          const bPercent = bPercentages[bFirstOption] || 0;
+          return bPercent - aPercent;
+        case 'yes-percent-asc':
+          // Sort by first option percentage ascending
+          const aPercentagesAsc = calculatePercentages(a.answers || {});
+          const bPercentagesAsc = calculatePercentages(b.answers || {});
+          const aFirstOptionAsc = a.options[0] || '';
+          const bFirstOptionAsc = b.options[0] || '';
+          const aPercentAsc = aPercentagesAsc[aFirstOptionAsc] || 0;
+          const bPercentAsc = bPercentagesAsc[bFirstOptionAsc] || 0;
+          return aPercentAsc - bPercentAsc;
+        default:
+          return 0;
+      }
+    });
+  };
+
+  const [users, setUsers] = useState<User[]>([]);
+  const [usersLoading, setUsersLoading] = useState(true);
+  const [currentPage, setCurrentPage] = useState(1);
+  const pageSize = 20;
   
   const [newQuestion, setNewQuestion] = useState({
     questionText: '',
@@ -80,6 +150,8 @@ const AdminPanel = () => {
   const [deleteAllQuestionsLoading, setDeleteAllQuestionsLoading] = useState(false);
   const [deleteAllUsersLoading, setDeleteAllUsersLoading] = useState(false);
   const [isDeleteAllUsersAlertOpen, setIsDeleteAllUsersAlertOpen] = useState(false);
+  const [sortBy, setSortBy] = useState<'date-desc' | 'date-asc' | 'votes-desc' | 'votes-asc' | 'yes-percent-desc' | 'yes-percent-asc'>('date-desc');
+  const [allQuestions, setAllQuestions] = useState<Question[]>([]);
   const { isOpen, onOpen, onClose } = useDisclosure();
   const { 
     isOpen: isDeleteUserAlertOpen, 
@@ -93,6 +165,97 @@ const AdminPanel = () => {
   } = useDisclosure();
   const cancelRef = useRef(null);
   const toast = useToast();
+
+  // Real-time listener for all users in admin panel
+  useEffect(() => {
+    let unsubscribe: Unsubscribe | null = null;
+
+    const setupUsersListener = () => {
+      try {
+        setUsersLoading(true);
+        unsubscribe = onSnapshot(
+          collection(db, 'users'),
+          (snapshot) => {
+            const userData: User[] = snapshot.docs.map((doc) => ({
+              ...(doc.data() as User),
+              uid: doc.id,
+            }));
+            setUsers(userData);
+            setUsersLoading(false);
+          },
+          (error) => {
+            console.error('Error listening to users:', error);
+            toast({
+              title: 'Error fetching users',
+              status: 'error',
+              duration: 3000,
+            });
+            setUsersLoading(false);
+          }
+        );
+      } catch (error) {
+        console.error('Error setting up users listener:', error);
+        toast({
+          title: 'Error setting up real-time updates',
+          status: 'error',
+          duration: 3000,
+        });
+        setUsersLoading(false);
+      }
+    };
+
+    setupUsersListener();
+
+    // Cleanup function to unsubscribe from the listener
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [toast]);
+
+  // Real-time listener for all questions in admin panel (for question history)
+  useEffect(() => {
+    let unsubscribe: Unsubscribe | null = null;
+
+    const setupQuestionsListener = () => {
+      try {
+        unsubscribe = onSnapshot(
+          collection(db, 'questions'),
+          (snapshot) => {
+            const questionData: Question[] = snapshot.docs.map((doc) => ({
+              ...(doc.data() as Question),
+              questionId: doc.id,
+            }));
+            setAllQuestions(questionData);
+          },
+          (error) => {
+            console.error('Error listening to questions:', error);
+            toast({
+              title: 'Error fetching questions',
+              status: 'error',
+              duration: 3000,
+            });
+          }
+        );
+      } catch (error) {
+        console.error('Error setting up questions listener:', error);
+        toast({
+          title: 'Error setting up question updates',
+          status: 'error',
+          duration: 3000,
+        });
+      }
+    };
+
+    setupQuestionsListener();
+
+    return () => {
+      if (unsubscribe) {
+        unsubscribe();
+      }
+    };
+  }, [toast]);
 
   const handleChangeUserRole = async (userId: string, newRole: 'admin' | 'regent' | 'user') => {
     try {
@@ -227,10 +390,9 @@ const AdminPanel = () => {
         answers: {},
       });
 
-      // Reset all users' answered status
-      const usersSnapshot = await getDocs(collection(db, 'users'));
-      usersSnapshot.docs.forEach((userDoc) => {
-        batch.update(doc(db, 'users', userDoc.id), { answered: false });
+      // Reset all users' answered status using in-memory users
+      users.forEach((u) => {
+        batch.update(doc(db, 'users', u.uid), { answered: false });
       });
 
       await batch.commit();
@@ -272,10 +434,9 @@ const AdminPanel = () => {
         answers: {} // Reset the answers object to clear vote counts
       });
   
-      // Reset all users' answered status
-      const usersSnapshot = await getDocs(collection(db, 'users'));
-      usersSnapshot.docs.forEach((userDoc) => {
-        batch.update(doc(db, 'users', userDoc.id), { answered: false });
+      // Reset all users' answered status using in-memory users
+      users.forEach((u) => {
+        batch.update(doc(db, 'users', u.uid), { answered: false });
       });
   
       await batch.commit();
@@ -298,20 +459,28 @@ const AdminPanel = () => {
   };
 
   // Filter for users who haven't voted
-  const pendingVoters = users.filter(user => user.verified && !user.answered);
+  const pendingVoters = useMemo(() => users.filter(user => user.verified && !user.answered), [users]);
   
   // Count verified and unverified users
-  const verifiedUsers = users.filter(user => user.verified).length;
-  const unverifiedUsers = users.filter(user => !user.verified).length;
+  const verifiedUsers = useMemo(() => users.filter(user => user.verified).length, [users]);
+  const unverifiedUsers = useMemo(() => users.filter(user => !user.verified).length, [users]);
   
   // Sort users to display unverified users at the top
-  const sortedUsers = [...users].sort((a, b) => {
-    // First sort by verification status (unverified first)
-    if (a.verified && !b.verified) return 1;
-    if (!a.verified && b.verified) return -1;
-    // Then by name for users with the same verification status
-    return (a.displayName || a.name || "").localeCompare(b.displayName || b.name || "");
-  });
+  const sortedUsers = useMemo(() => {
+    const arr = [...users];
+    arr.sort((a, b) => {
+      if (a.verified && !b.verified) return 1;
+      if (!a.verified && b.verified) return -1;
+      return (a.displayName || a.name || "").localeCompare(b.displayName || b.name || "");
+    });
+    return arr;
+  }, [users]);
+
+  const totalPages = useMemo(() => Math.max(1, Math.ceil(sortedUsers.length / pageSize)), [sortedUsers.length]);
+  const pagedUsers = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return sortedUsers.slice(start, start + pageSize);
+  }, [sortedUsers, currentPage]);
 
   const handleDeleteQuestion = async (question: Question) => {
     setQuestionToDelete(question);
@@ -355,7 +524,7 @@ const AdminPanel = () => {
     try {
       const batch = writeBatch(db);
       
-      for (const question of questions) {
+      for (const question of allQuestions) {
         const questionRef = doc(db, 'questions', question.questionId);
         batch.delete(questionRef);
       }
@@ -419,9 +588,9 @@ const AdminPanel = () => {
 
   return (
     <Box width="100vw" minH="100%" bg="gray.50" p={4}>
-      {isDataLoading && users.length === 0 ? (
+      {(isDataLoading || usersLoading) && users.length === 0 ? (
         <Center minH="70vh">
-          <Spinner size="xl" color="blue.500" thickness="4px" />
+          <Spinner size="xl" color="garnet.500" thickness="4px" />
         </Center>
       ) : (
         <Box maxW="1400px" mx="auto" w="100%">
@@ -431,19 +600,30 @@ const AdminPanel = () => {
             <Box bg="white" p={6} borderRadius="md" boxShadow="md" mb={6} w="100%">
               <Flex justifyContent="space-between" alignItems="center" mb={4}>
                 <Heading size="md">Current Question</Heading>
-                <Button colorScheme="red" onClick={onOpen}>Create New Question</Button>
+                <Button colorScheme="garnet" onClick={onOpen}>Create New Question</Button>
               </Flex>
               
               {currentQuestion ? (
                 <Box>
                   <Text fontWeight="bold" mb={2}>{currentQuestion.questionText}</Text>
                   <Stack spacing={2} mb={4}>
-                    {currentQuestion.options.map((option, index) => (
-                      <Text key={index}>
-                        {option}: {currentQuestion.answers?.[option] || 0} votes
-                      </Text>
-                    ))}
+                    {currentQuestion.options.map((option, index) => {
+                      const voteCount = currentQuestion.answers?.[option] || 0;
+                      const percentages = calculatePercentages(currentQuestion.answers || {});
+                      const percentage = percentages[option] || 0;
+
+                      return (
+                        <Text key={index}>
+                          {option}: {voteCount} votes ({percentage}%)
+                        </Text>
+                      );
+                    })}
                   </Stack>
+                  {Object.keys(currentQuestion.answers || {}).length > 0 && (
+                    <Text fontSize="sm" color="gray.600" mt={2}>
+                      Total votes: {Object.values(currentQuestion.answers || {}).reduce((sum, count) => sum + count, 0)}
+                    </Text>
+                  )}
                 </Box>
               ) : (
                 <Text>No active question. Create a new question to get started.</Text>
@@ -465,7 +645,7 @@ const AdminPanel = () => {
                         User Management ({users.length} total - Verified: {verifiedUsers}, Unverified: {unverifiedUsers})
                       </Heading>
                       <Button 
-                        colorScheme="red" 
+                        colorScheme="garnet" 
                         size="sm"
                         onClick={handleDeleteAllUsers}
                         isLoading={deleteAllUsersLoading}
@@ -486,7 +666,7 @@ const AdminPanel = () => {
                           </Tr>
                         </Thead>
                         <Tbody>
-                          {sortedUsers.map((user) => (
+                          {pagedUsers.map((user) => (
                             <Tr key={user.uid}>
                               <Td>{user.displayName || user.name || "User"}</Td>
                               <Td>{user.email}</Td>
@@ -534,7 +714,7 @@ const AdminPanel = () => {
                                     ) : (
                                       <Button
                                         size="sm"
-                                        colorScheme="red"
+                                        colorScheme="garnet"
                                         onClick={() => handleVerifyUser(user.uid, false)}
                                       >
                                         Unverify
@@ -553,7 +733,7 @@ const AdminPanel = () => {
                                     <IconButton
                                       icon={<FiTrash2 />}
                                       aria-label="Delete user"
-                                      colorScheme="red"
+                                      colorScheme="garnet"
                                       variant="solid"
                                       size="sm"
                                       onClick={() => handleDeleteUser(user)}
@@ -565,6 +745,13 @@ const AdminPanel = () => {
                           ))}
                         </Tbody>
                       </Table>
+                      <Flex justifyContent="space-between" alignItems="center" mt={4}>
+                        <Text fontSize="sm">Page {currentPage} of {totalPages}</Text>
+                        <HStack>
+                          <Button size="sm" onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} isDisabled={currentPage === 1}>Prev</Button>
+                          <Button size="sm" onClick={() => setCurrentPage((p) => Math.min(totalPages, p + 1))} isDisabled={currentPage === totalPages}>Next</Button>
+                        </HStack>
+                      </Flex>
                     </Box>
                   </Box>
                 </TabPanel>
@@ -573,8 +760,8 @@ const AdminPanel = () => {
                   <Box bg="white" p={6} borderRadius="md" boxShadow="md" w="100%">
                     <Flex justifyContent="space-between" alignItems="center" mb={4}>
                       <Heading size="md">Question History</Heading>
-                      <Button 
-                        colorScheme="red" 
+                      <Button
+                        colorScheme="garnet"
                         size="sm"
                         onClick={handleDeleteAllQuestions}
                         isLoading={deleteAllQuestionsLoading}
@@ -582,27 +769,56 @@ const AdminPanel = () => {
                         Delete All Questions
                       </Button>
                     </Flex>
+
+                    <Flex justifyContent="flex-start" mb={4}>
+                      <Select
+                        placeholder="Sort by..."
+                        value={sortBy}
+                        onChange={(e) => setSortBy(e.target.value as any)}
+                        width="200px"
+                      >
+                        <option value="date-desc">Newest First</option>
+                        <option value="date-asc">Oldest First</option>
+                        <option value="votes-desc">Most Votes</option>
+                        <option value="votes-asc">Least Votes</option>
+                        <option value="yes-percent-desc">Highest Yes %</option>
+                        <option value="yes-percent-asc">Lowest Yes %</option>
+                      </Select>
+                    </Flex>
                     <Box maxH="500px" overflowY="auto" w="100%">
                       <Table variant="simple">
                         <Thead>
                           <Tr>
+                            <Th width="60px">#</Th>
                             <Th>Question</Th>
                             <Th>Status</Th>
                             <Th>Actions</Th>
                           </Tr>
                         </Thead>
                         <Tbody>
-                          {questions.map((question) => (
+                          {getSortedQuestions(allQuestions).map((question, index) => (
                             <Tr key={question.questionId}>
+                              <Td fontWeight="bold" color="gray.600">{index + 1}</Td>
                               <Td>
                                 <Box>
                                   <Text fontWeight="bold">{question.questionText}</Text>
                                   <Box mt={2} ml={2}>
-                                    {question.options.map((option) => (
-                                      <Text key={option} fontSize="sm" color="gray.600">
-                                        {option}: {question.answers?.[option] || 0} votes
+                                    {question.options.map((option) => {
+                                      const voteCount = question.answers?.[option] || 0;
+                                      const percentages = calculatePercentages(question.answers || {});
+                                      const percentage = percentages[option] || 0;
+
+                                      return (
+                                        <Text key={option} fontSize="sm" color="gray.600">
+                                          {option}: {voteCount} votes ({percentage}%)
+                                        </Text>
+                                      );
+                                    })}
+                                    {Object.keys(question.answers || {}).length > 0 && (
+                                      <Text fontSize="xs" color="gray.500" mt={1}>
+                                        Total: {Object.values(question.answers || {}).reduce((sum, count) => sum + count, 0)} votes
                                       </Text>
-                                    ))}
+                                    )}
                                   </Box>
                                 </Box>
                               </Td>
@@ -626,7 +842,7 @@ const AdminPanel = () => {
                                     <IconButton
                                       icon={<FiTrash2 />}
                                       aria-label="Delete question"
-                                      colorScheme="red"
+                                      colorScheme="garnet"
                                       variant="solid"
                                       size="sm"
                                       onClick={() => handleDeleteQuestion(question)}
@@ -706,7 +922,7 @@ const AdminPanel = () => {
                   />
                   {newQuestion.options.length > 2 && (
                     <Button
-                      colorScheme="red"
+                      colorScheme="garnet"
                       size="sm"
                       onClick={() => handleRemoveOption(index)}
                     >
@@ -715,7 +931,7 @@ const AdminPanel = () => {
                   )}
                 </Flex>
               ))}
-              <Button onClick={handleAddOption} colorScheme="red" variant="outline">
+              <Button onClick={handleAddOption} colorScheme="garnet" variant="outline">
                 Add Option
               </Button>
             </Stack>
@@ -726,7 +942,7 @@ const AdminPanel = () => {
               Cancel
             </Button>
             <Button
-              colorScheme="red"
+              colorScheme="garnet"
               onClick={handleCreateQuestion}
               isDisabled={
                 newQuestion.questionText.trim() === '' ||
@@ -760,7 +976,7 @@ const AdminPanel = () => {
                 Cancel
               </Button>
               <Button 
-                colorScheme="red" 
+                colorScheme="garnet" 
                 onClick={confirmDeleteUser} 
                 ml={3}
                 isLoading={deleteLoading}
@@ -794,7 +1010,7 @@ const AdminPanel = () => {
                 Cancel
               </Button>
               <Button 
-                colorScheme="red" 
+                colorScheme="garnet" 
                 onClick={confirmDeleteQuestion} 
                 ml={3}
                 isLoading={deleteQuestionLoading}
@@ -831,7 +1047,7 @@ const AdminPanel = () => {
                 Cancel
               </Button>
               <Button 
-                colorScheme="red" 
+                colorScheme="garnet" 
                 onClick={confirmDeleteAllQuestions} 
                 ml={3}
                 isLoading={deleteAllQuestionsLoading}
@@ -868,7 +1084,7 @@ const AdminPanel = () => {
                 Cancel
               </Button>
               <Button 
-                colorScheme="red" 
+                colorScheme="garnet" 
                 onClick={confirmDeleteAllUsers} 
                 ml={3}
                 isLoading={deleteAllUsersLoading}

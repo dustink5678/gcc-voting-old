@@ -19,7 +19,7 @@ import {
 import { FcGoogle } from 'react-icons/fc';
 import { useAuth } from '../contexts/AuthContext';
 import { useNavigate } from 'react-router-dom';
-import thetaTauLogo from '../assets/logo.png';
+import gccLogo from '../assets/logo.png';
 
 const Login = () => {
   const { signInWithGoogle, resetUserCache, signOut, user } = useAuth() as any;
@@ -32,14 +32,14 @@ const Login = () => {
   useEffect(() => {
     if (user) {
       // @ts-ignore
-      if (user.role === 'admin') {
+      if (user.role === 'admin' || user.email === 'dustinisaacking@gmail.com') {
         navigate('/admin');
       // @ts-ignore
-      } else if (user.role === 'regent') {
-        navigate('/set-timer');
+      } else if (user.role === 'shame') {
+        navigate('/pending');
       // @ts-ignore
       } else if (user.verified) {
-        navigate('/timer');
+        navigate('/dashboard');
       } else {
         toast({
           title: 'Account pending verification',
@@ -121,7 +121,7 @@ const Login = () => {
       >
         <Center>
           <VStack spacing={4}>
-            <Spinner size="xl" color="blue.500" thickness="4px" />
+            <Spinner size="xl" color="garnet.500" thickness="4px" />
             <Text>
               {'Processing, please wait...'}
             </Text>
@@ -151,15 +151,15 @@ const Login = () => {
         borderRadius="md"
       >
         <Image 
-          src={thetaTauLogo}
-          alt="Theta Tau Logo" 
+          src={gccLogo}
+          alt="Gamecock Consulting Club Logo" 
           height="100px"
           objectFit="contain"
           mb={6}
         />
-        <Heading mb={6} textAlign="center">Theta Tau Voting System</Heading>
+        <Heading mb={6} textAlign="center" color="garnet.500">Gamecock Consulting Club Voting</Heading>
         <Text mb={8} textAlign="center" color="gray.600">
-          Sign in with your Google account to participate in chapter voting
+          Sign in with your Google account to participate in club voting
         </Text>
         
         {errorMessage && (
@@ -183,7 +183,7 @@ const Login = () => {
         <VStack spacing={4} width="100%">
           <Button
             size="lg"
-            colorScheme="blue"
+            colorScheme="garnet"
             onClick={handleGoogleSignIn}
             width="100%"
             leftIcon={<FcGoogle size={20} />}

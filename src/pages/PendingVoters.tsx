@@ -9,15 +9,20 @@ import {
   Container,
   Badge,
 } from '@chakra-ui/react';
-import { collection, onSnapshot } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { User } from '../types/index';
 
 const PendingVoters = () => {
   const [users, setUsers] = useState<User[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState<string | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
+    setIsLoading(true);
+    setError(null);
+
     // Subscribe to users
     const unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
       const userData: User[] = snapshot.docs.map((doc) => ({
@@ -25,20 +30,34 @@ const PendingVoters = () => {
         uid: doc.id,
       }));
       setUsers(userData);
+      setIsLoading(false);
+    }, (error) => {
+      console.error('Error loading users:', error);
+      if (error.code === 'permission-denied') {
+        setError('You do not have permission to view the pending voters list.');
+      } else {
+        setError('Failed to load users. Please refresh the page.');
+      }
+      setIsLoading(false);
     });
 
-    // Subscribe to active question to get its text
+    // Subscribe to active question only
+    const activeQuestionsQuery = query(collection(db, 'questions'), where('active', '==', true));
     const unsubscribeQuestions = onSnapshot(
-      collection(db, 'questions'),
+      activeQuestionsQuery,
       (snapshot) => {
-        const activeQuestion = snapshot.docs.find(
-          (doc) => doc.data().active === true
-        );
+        const activeQuestion = snapshot.docs[0]; // Should only be one active question
         if (activeQuestion) {
           setCurrentQuestion(activeQuestion.data().questionText);
         } else {
           setCurrentQuestion(null);
         }
+        setIsLoading(false);
+      },
+      (error) => {
+        console.error('Error loading questions:', error);
+        setError('Failed to load question data. Please refresh the page.');
+        setIsLoading(false);
       }
     );
 
@@ -48,10 +67,60 @@ const PendingVoters = () => {
     };
   }, []);
 
-  // Filter for verified users who haven't voted
+  // Filter for verified users who haven't voted (exclude shame users who can't vote)
   const pendingVoters = users.filter(
-    (user) => user.verified && !user.answered
+    (user) => user.verified && !user.answered && user.role !== 'shame'
   );
+
+  if (isLoading) {
+    return (
+      <Box
+        width="100vw"
+        minH="100vh"
+        bg="gray.50"
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        py={10}
+      >
+        <Box
+          bg="white"
+          p={8}
+          borderRadius="md"
+          boxShadow="md"
+          textAlign="center"
+        >
+          <Heading size="lg" mb={4}>Loading...</Heading>
+          <Text>Loading pending voters...</Text>
+        </Box>
+      </Box>
+    );
+  }
+
+  if (error) {
+    return (
+      <Box
+        width="100vw"
+        minH="100vh"
+        bg="gray.50"
+        display="flex"
+        alignItems="center"
+        justifyContent="center"
+        py={10}
+      >
+        <Box
+          bg="white"
+          p={8}
+          borderRadius="md"
+          boxShadow="md"
+          textAlign="center"
+        >
+          <Heading size="lg" mb={4} color="garnet.500">Error</Heading>
+          <Text mb={4}>{error}</Text>
+        </Box>
+      </Box>
+    );
+  }
 
   return (
     <Box
@@ -72,7 +141,7 @@ const PendingVoters = () => {
           width="100%"
           textAlign="center"
         >
-          <Heading size="lg" mb={2}>Brothers Who Haven't Voted Yet</Heading>
+          <Heading size="lg" mb={2}>Wall of Shame</Heading>
           
           {currentQuestion ? (
             <Text fontSize="xl" mb={6} color="gray.600">
@@ -86,7 +155,7 @@ const PendingVoters = () => {
 
           {pendingVoters.length > 0 ? (
             <>
-              <Badge fontSize="md" colorScheme="red" mb={4}>
+              <Badge fontSize="md" colorScheme="garnet" mb={4}>
                 {pendingVoters.length} Member{pendingVoters.length !== 1 ? 's' : ''} Pending
               </Badge>
               
@@ -95,7 +164,7 @@ const PendingVoters = () => {
                   <ListItem 
                     key={user.uid}
                     p={3}
-                    bg="red.50"
+                    bg="garnet.50"
                     borderRadius="md"
                     boxShadow="sm"
                     fontSize="xl"

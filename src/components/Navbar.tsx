@@ -29,23 +29,18 @@ const Navbar = () => {
     const path = location.pathname;
 
     if (user.role === 'admin') {
-      // Admin tabs: Timer(0), Set Timer(1), Admin Panel(2), Dashboard(3)
-      if (path === '/timer') return 0;
-      if (path === '/set-timer') return 1;
-      if (path === '/admin') return 2;
-      if (path === '/dashboard') return 3;
-      return 0; // default to timer
-    } else if (user.role === 'regent') {
-      // Regent tabs: Timer(0), Set Timer(1), Dashboard(2)
-      if (path === '/timer') return 0;
-      if (path === '/set-timer') return 1;
-      if (path === '/dashboard') return 2;
-      return 0; // default to timer
-    } else {
-      // User tabs: Timer(0), Dashboard(1)
-      if (path === '/timer') return 0;
+      // Admin tabs: Admin Panel(0), Dashboard(1)
+      if (path === '/admin') return 0;
       if (path === '/dashboard') return 1;
-      return 0; // default to timer
+      return 0;
+    } else if (user.role === 'shame') {
+      // Shame tabs: Pending(0)
+      if (path === '/pending') return 0;
+      return 0;
+    } else {
+      // User tabs: Dashboard(0)
+      if (path === '/dashboard') return 0;
+      return 0;
     }
   };
 
@@ -53,20 +48,12 @@ const Navbar = () => {
     if (!user) return;
 
     if (user.role === 'admin') {
-      // Admin navigation
-      if (index === 0) navigate('/timer');
-      else if (index === 1) navigate('/set-timer');
-      else if (index === 2) navigate('/admin');
-      else if (index === 3) navigate('/dashboard');
-    } else if (user.role === 'regent') {
-      // Regent navigation
-      if (index === 0) navigate('/timer');
-      else if (index === 1) navigate('/set-timer');
-      else if (index === 2) navigate('/dashboard');
-    } else {
-      // User navigation
-      if (index === 0) navigate('/timer');
+      if (index === 0) navigate('/admin');
       else if (index === 1) navigate('/dashboard');
+    } else if (user.role === 'shame') {
+      if (index === 0) navigate('/pending');
+    } else {
+      if (index === 0) navigate('/dashboard');
     }
   };
 
@@ -79,7 +66,7 @@ const Navbar = () => {
       <Flex
         as="nav"
         width="100%"
-        bg="red.600"
+        bg="garnet.500"
         color="white"
         py={2}
         px={4}
@@ -87,7 +74,7 @@ const Navbar = () => {
         justify="space-between"
       >
         <Box>
-          <Text fontWeight="bold" fontSize="lg">Theta Tau Voting</Text>
+          <Text fontWeight="bold" fontSize="lg">Gamecock Consulting Club</Text>
         </Box>
 
         {user && (
@@ -96,8 +83,8 @@ const Navbar = () => {
               as={Button} 
               variant="ghost" 
               color="white" 
-              _hover={{ bg: 'red.500' }} 
-              _active={{ bg: 'red.500' }}
+              _hover={{ bg: 'garnet.600' }} 
+              _active={{ bg: 'garnet.600' }}
             >
               <Flex align="center" gap={2}>
                 <Avatar size="sm" src={user.photoURL || undefined} name={user.displayName || user.name || 'User'} />
@@ -106,7 +93,7 @@ const Navbar = () => {
             </MenuButton>
             <MenuList color="black">
               <MenuItem fontWeight="bold">
-                {user.role === 'admin' ? 'Administrator' : user.role === 'regent' ? 'Regent' : 'Member'}
+                {user.role === 'admin' ? 'Administrator' : user.role === 'shame' ? 'Shame' : 'Member'}
               </MenuItem>
               <MenuDivider />
               <MenuItem onClick={signOut}>Sign Out</MenuItem>
@@ -123,28 +110,23 @@ const Navbar = () => {
           variant="enclosed"
           bg="white"
           width="100%"
-          colorScheme="red"
+          colorScheme="garnet"
           px={4}
         >
           <TabList>
             {user.role === 'admin' && (
               <>
-                <Tab as={Link} to="/timer">Timer</Tab>
-                <Tab as={Link} to="/set-timer">Set Timer</Tab>
                 <Tab as={Link} to="/admin">Admin Panel</Tab>
                 <Tab as={Link} to="/dashboard">Dashboard</Tab>
               </>
             )}
-            {user.role === 'regent' && (
+            {user.role === 'shame' && (
               <>
-                <Tab as={Link} to="/timer">Timer</Tab>
-                <Tab as={Link} to="/set-timer">Set Timer</Tab>
-                <Tab as={Link} to="/dashboard">Dashboard</Tab>
+                <Tab as={Link} to="/pending">Pending</Tab>
               </>
             )}
             {user.role === 'user' && (
               <>
-                <Tab as={Link} to="/timer">Timer</Tab>
                 <Tab as={Link} to="/dashboard">Dashboard</Tab>
               </>
             )}

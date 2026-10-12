@@ -28,7 +28,7 @@ const TimerControl = () => {
   const [now, setNow] = useState(Date.now());
   const intervalRef = useRef<number | null>(null);
 
-  const isController = useMemo(() => user && (user.role === 'admin' || user.role === 'regent'), [user]);
+  const isController = useMemo(() => user && (user.role === 'admin'), [user]);
 
   useEffect(() => {
     ensureTimerDoc();
@@ -155,7 +155,7 @@ const TimerControl = () => {
           <Flex gap={3} justify="center">
             <Button colorScheme="blue" onClick={handleStart}>Start</Button>
             <Button colorScheme="yellow" onClick={handlePauseResume}>{timer?.isPaused ? 'Resume' : 'Pause'}</Button>
-            <Button colorScheme="red" onClick={handleReset}>Reset</Button>
+            <Button colorScheme="garnet" onClick={handleReset}>Reset</Button>
           </Flex>
         </Stack>
       </Box>

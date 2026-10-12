@@ -17,7 +17,7 @@ const TimerView = () => {
   const [now, setNow] = useState(Date.now());
   const intervalRef = useRef<number | null>(null);
 
-  const isController = user && (user.role === 'admin' || user.role === 'regent');
+  const isController = user && (user.role === 'admin');
 
   useEffect(() => {
     ensureTimerDoc();
@@ -26,11 +26,13 @@ const TimerView = () => {
   }, []);
 
   useEffect(() => {
-    // local ticking for display and auto-switch attempts (controllers only)
+    // local ticking for display and throttled auto-switch attempts (controllers only)
     if (intervalRef.current) window.clearInterval(intervalRef.current);
     intervalRef.current = window.setInterval(async () => {
-      setNow(Date.now());
-      if (isController && user) {
+      const now = Date.now();
+      setNow(now);
+      // Throttle maybeAutoSwitchPhase checks to ~every 2 seconds
+      if (isController && user && (now % 2000) < 250) {
         try {
           await maybeAutoSwitchPhase(user);
         } catch {}
@@ -70,7 +72,7 @@ const TimerView = () => {
             </Text>
           </Box>
           <Text textAlign="center" color="gray.500" fontSize="sm">
-            Timer controlled by administrators and regents
+            Timer controlled by administrators
           </Text>
         </Stack>
       </Box>

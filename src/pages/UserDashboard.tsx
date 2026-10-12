@@ -12,74 +12,86 @@ import {
   Center,
   Spinner,
 } from '@chakra-ui/react';
-import { updateDoc, doc, getDoc } from 'firebase/firestore';
+import { updateDoc, doc, getDoc, increment, serverTimestamp } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { useAuth } from '../contexts/AuthContext';
 import { useData } from '../contexts/DataContext';
 
 const UserDashboard = () => {
   const { user } = useAuth();
-  const { currentQuestion, isDataLoading } = useData();
+  const { currentQuestion, isDataLoading, currentUser } = useData();
   const [selectedOption, setSelectedOption] = useState<string>('');
   const [isVoting, setIsVoting] = useState(false);
   const [hasVoted, setHasVoted] = useState(false);
   const toast = useToast();
 
   useEffect(() => {
-    if (!user) return;
-    setHasVoted(user.answered);
-  }, [user]);
+    if (!currentUser) return;
+    setHasVoted(currentUser.answered);
+  }, [currentUser]);
 
   const handleVote = async () => {
     if (!currentQuestion || !selectedOption || !user) return;
 
+    // Optimistic UX: mark as voting/voted immediately
     setIsVoting(true);
+    const previousHasVoted = hasVoted;
+    setHasVoted(true);
     try {
-      // Get a reference to the question document
-      const questionRef = doc(db, 'questions', currentQuestion.questionId);
-      
-      // First check if the question exists
-      const questionSnapshot = await getDoc(questionRef);
-      if (!questionSnapshot.exists()) {
-        throw new Error('Question not found');
+      // Check if user has already voted
+      if (currentUser?.answered) {
+        throw new Error('You have already voted on this question');
       }
-      
-      // Get current answers or initialize empty object
-      const questionData = questionSnapshot.data();
-      const answers = questionData.answers || {};
-      
-      // Create a simple update that only affects the answers field
-      // This is crucial for our security rules that only allow users to update the answers field
-      const updatePayload = {
-        answers: { ...answers }
-      };
-      
-      // Increment the count for the selected option
-      updatePayload.answers[selectedOption] = (updatePayload.answers[selectedOption] || 0) + 1;
-      
-      // Update the question document
-      await updateDoc(questionRef, updatePayload);
-      
-      // Update user's answered status
-      await updateDoc(doc(db, 'users', user.uid), {
-        answered: true
-      });
-      
-      // Update local state
-      setHasVoted(true);
 
+      // Check if question is still active
+      if (!currentQuestion.active) {
+        throw new Error('Voting for this question has ended');
+      }
+
+      // Use atomic increment to update the vote count
+      const questionRef = doc(db, 'questions', currentQuestion.questionId);
+      const answersPath = `answers.${selectedOption}`;
+      
+      await updateDoc(questionRef, {
+        [answersPath]: increment(1),
+        lastVoteAt: serverTimestamp()
+      });
+
+      // Update user's answered status
+      const userRef = doc(db, 'users', user.uid);
+      await updateDoc(userRef, {
+        answered: true,
+        votedAt: serverTimestamp(),
+        lastVoteOption: selectedOption
+      });
+      // success: keep optimistic state
+      
       toast({
         title: 'Vote submitted successfully',
         status: 'success',
         duration: 3000,
       });
-    } catch (error) {
+      
+    } catch (error: any) {
       console.error('Error submitting vote:', error);
+      // revert optimistic state on error when appropriate
+      setHasVoted(previousHasVoted);
+      let errorMessage = 'Please try again or contact an administrator.';
+      
+      if (error.message?.includes('already voted')) {
+        errorMessage = 'You have already voted on this question.';
+        setHasVoted(true);
+      } else if (error.message?.includes('not found')) {
+        errorMessage = 'This question is no longer available.';
+      } else if (error.message?.includes('no longer active') || error.message?.includes('ended')) {
+        errorMessage = 'Voting for this question has ended.';
+      }
+      
       toast({
         title: 'Error submitting vote',
-        description: 'Please try again or contact an administrator.',
+        description: errorMessage,
         status: 'error',
-        duration: 3000,
+        duration: 5000,
       });
     } finally {
       setIsVoting(false);
@@ -87,7 +99,7 @@ const UserDashboard = () => {
   };
 
   const renderContent = () => {
-    if (!user?.verified) {
+    if (!currentUser?.verified) {
       return (
         <Box width="100%" display="flex" justifyContent="center" alignItems="center" py={10}>
           <Box 
@@ -175,7 +187,7 @@ const UserDashboard = () => {
               </Stack>
             </RadioGroup>
             <Button
-              colorScheme="blue"
+              colorScheme="garnet"
               size="lg"
               w="full"
               onClick={handleVote}
@@ -200,7 +212,7 @@ const UserDashboard = () => {
     >
       {isDataLoading && !currentQuestion ? (
         <Center>
-          <Spinner size="xl" color="blue.500" thickness="4px" />
+          <Spinner size="xl" color="garnet.500" thickness="4px" />
         </Center>
       ) : (
         renderContent()

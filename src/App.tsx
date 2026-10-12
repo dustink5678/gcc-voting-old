@@ -5,39 +5,52 @@ import { useAuth } from './contexts/AuthContext';
 import { DataProvider } from './contexts/DataContext';
 import Login from './pages/Login';
 import AdminPanel from './pages/AdminPanel'
-import TimerControl from './pages/TimerControl'
-import TimerView from './pages/TimerView'
 import UserDashboard from './pages/UserDashboard';
 import PendingVoters from './pages/PendingVoters';
 import LoadingScreen from './components/LoadingScreen';
 import Navbar from './components/Navbar';
 
-// Create a custom maroon theme
+// Gamecock Consulting Club theme: Garnet #73000A, Black #000000, White #FFFFFF, Light Gray #F2F2F2
 const theme = extendTheme({
   colors: {
+    garnet: {
+      50: '#f5e5e6',
+      100: '#e6bfc2',
+      200: '#d6999e',
+      300: '#c6737a',
+      400: '#b74d56',
+      500: '#73000A', // Carolina Garnet - primary
+      600: '#5c0008',
+      700: '#450006',
+      800: '#2e0004',
+      900: '#170002',
+    },
     blue: {
-      50: '#f9e6e8',
-      100: '#f0bdc2',
-      200: '#e5939b',
-      300: '#db6a74',
-      400: '#d1414e',
-      500: '#c71827', // Primary maroon color
-      600: '#a01320',
-      700: '#780e18',
-      800: '#500a10',
-      900: '#280508',
+      50: '#f2f2f2',
+      100: '#e6e6e6',
+      200: '#bfbfbf',
+      300: '#999999',
+      400: '#4d4d4d',
+      500: '#73000A',
+      600: '#5c0008',
+      700: '#450006',
+      800: '#2e0004',
+      900: '#170002',
     },
     red: {
-      50: '#f9e6e8',
-      100: '#f0bdc2',
-      200: '#e5939b',
-      300: '#db6a74',
-      400: '#d1414e',
-      500: '#c71827', // Primary maroon color
-      600: '#a01320',
-      700: '#780e18',
-      800: '#500a10',
-      900: '#280508',
+      50: '#f5e5e6',
+      100: '#e6bfc2',
+      200: '#d6999e',
+      300: '#c6737a',
+      400: '#b74d56',
+      500: '#73000A', // Carolina Garnet
+      600: '#5c0008',
+      700: '#450006',
+      800: '#2e0004',
+      900: '#170002',
+    },
+    gray: {
+      50: '#F2F2F2', // Light gray background tone
     },
   },
 });
@@ -53,19 +66,19 @@ const PrivateRoute = ({ children, adminOnly = false, controllerOnly = false }: {
     return <Navigate to="/login" replace />;
   }
 
-  if (adminOnly && user.role !== 'admin') {
-    return <Navigate to="/timer" replace />;
+  if (adminOnly && user.role !== 'admin' && user.email !== 'dustinisaacking@gmail.com') {
+    return <Navigate to="/dashboard" replace />;
   }
 
   if (controllerOnly) {
-    const isController = user.role === 'admin' || user.role === 'regent';
+    const isController = user.role === 'admin';
     if (!isController) {
-      return <Navigate to="/timer" replace />;
+      return <Navigate to="/dashboard" replace />;
     }
   }
 
   // Calculate content height based on whether user is admin (with tabs) or not
-  const contentMinHeight = (user.role === 'admin' || user.role === 'regent') ? 'calc(100vh - 98px)' : 'calc(100vh - 56px)';
+  const contentMinHeight = (user.role === 'admin') ? 'calc(100vh - 98px)' : 'calc(100vh - 56px)';
 
   return (
     <Flex direction="column" width="100vw" minH="100vh">
@@ -86,12 +99,12 @@ const PublicRoute = ({ children }: { children: React.ReactNode }) => {
 
       // If user is authenticated, redirect them immediately
     if (user) {
-      if (user.role === 'admin') {
+      if (user.role === 'admin' || user.email === 'dustinisaacking@gmail.com') {
         return <Navigate to="/admin" replace />;
-      } else if (user.role === 'regent') {
-        return <Navigate to="/set-timer" replace />;
+      } else if (user.role === 'shame') {
+        return <Navigate to="/pending" replace />;
       } else {
-        return <Navigate to="/timer" replace />;
+        return <Navigate to="/dashboard" replace />;
       }
     }
 
@@ -138,36 +151,20 @@ const AppContent = () => {
         <Route
           path="/pending"
           element={
-            <PublicRoute>
-              <PendingVoters />
-            </PublicRoute>
-          }
-        />
-        <Route
-          path="/timer"
-          element={
             <PrivateRoute>
-              <TimerView />
-            </PrivateRoute>
-          }
-        />
-        <Route
-          path="/set-timer"
-          element={
-            <PrivateRoute controllerOnly>
-              <TimerControl />
+              <PendingVoters />
             </PrivateRoute>
           }
         />
         <Route path="/" element={
           loading ? (
             <LoadingScreen />
-          ) : user?.role === 'admin' ? (
+          ) : (user?.role === 'admin' || user?.email === 'dustinisaacking@gmail.com') ? (
             <Navigate to="/admin" replace />
-          ) : user?.role === 'regent' ? (
-            <Navigate to="/set-timer" replace />
+          ) : user?.role === 'shame' ? (
+            <Navigate to="/pending" replace />
           ) : (
-            <Navigate to="/timer" replace />
+            <Navigate to="/dashboard" replace />
           )
         } />
       </Routes>

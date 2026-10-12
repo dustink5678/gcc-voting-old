@@ -6,7 +6,7 @@ export interface User {
   photoURL?: string;
   verified: boolean;
   answered: boolean;
-  role: 'admin' | 'regent' | 'user';
+  role: 'admin' | 'shame' | 'user';
 }
 
 export interface Question {
@@ -15,7 +15,7 @@ export interface Question {
   options: string[];
   answers: Record<string, number>;
   active: boolean;
-  createdAt: Date;
+  createdAt: Date | any; // Can be Date or Firestore Timestamp
 }
 
 export interface AuthContextType {
@@ -35,7 +35,7 @@ export interface TimerState {
   lastUpdatedBy?: {
     uid: string;
     email?: string;
-    role?: 'admin' | 'regent' | 'user';
+    role?: 'admin' | 'shame' | 'user';
   };
   lastUpdatedAt?: any; // Firestore server timestamp
   _remainingMs?: number;

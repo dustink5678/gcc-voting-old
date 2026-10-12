@@ -7,18 +7,20 @@ service cloud.firestore {
       return request.auth != null;
     }
     
-    // Helper function to check if user is admin or regent
+    // Helper function to check if user is admin (email bypass for first admin, or Firestore role)
     function isAdmin() {
-      return isAuthenticated() &&
-             exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin';
+      return isAuthenticated() && (
+        request.auth.token.email == 'dustinisaacking@gmail.com' ||
+        (exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+         get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin')
+      );
     }
 
-    function isController() {
+    // Helper function to check if user has shame role
+    function isShame() {
       return isAuthenticated() &&
              exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
-             (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
-              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'regent');
+             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'shame';
     }
     
     // Users collection
@@ -29,11 +31,13 @@ service cloud.firestore {
       // Allow users to create their own document (for new users)
       allow create: if isAuthenticated() && request.auth.uid == userId;
 
-      // Allow users to update their own data
+      // Allow users to update their own data (including answered, votedAt, lastVoteOption)
       allow update: if isAuthenticated() && request.auth.uid == userId;
 
-      // Admins and regents can read/write any user document
-      allow read, write: if isController();
+      // Admins can read/write any user document
+      allow write: if isAdmin();
+      // Admins and shame can read any user document (for pending voters page)
+      allow read: if isAdmin() || isShame();
     }
     
     // Questions collection
@@ -41,12 +45,13 @@ service cloud.firestore {
       // Anyone authenticated can read questions
       allow read: if isAuthenticated();
 
-      // Allow authenticated users to update only the answers field
-      allow update: if isAuthenticated() &&
-                      request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answers']);
+      // Allow authenticated non-shame users to update answers and lastVoteAt fields (voting)
+      allow update: if isAuthenticated() && !isShame() &&
+                      (request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answers', 'lastVoteAt']) ||
+                       request.resource.data.diff(resource.data).affectedKeys().hasOnly(['answers']));
 
-      // Only admins and regents can create/delete questions or update other fields
-      allow create, delete, update: if isController();
+      // Only admins can create/delete questions or update other fields
+      allow create, delete, update: if isAdmin();
     }
 
     // Timer collection for rotation timer
@@ -54,8 +59,9 @@ service cloud.firestore {
       // Anyone authenticated can read timer state
       allow read: if isAuthenticated();
 
-      // Only admins and regents can write to timer
-      allow write: if isController();
+      // Only admins can write to timer
+      allow write: if isAdmin();
     }
+
   }
 }

@@ -1,11 +1,11 @@
 import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-import { collection, onSnapshot, Unsubscribe } from 'firebase/firestore';
+import { collection, onSnapshot, Unsubscribe, doc, query, where } from 'firebase/firestore';
 import { db } from '../config/firebase';
 import { User, Question } from '../types/index';
 import { useAuthContext } from '../contexts/AuthContext';
 
 interface DataContextType {
-  users: User[];
+  currentUser: User | null;
   questions: Question[];
   currentQuestion: Question | null;
   isDataLoading: boolean;
@@ -22,15 +22,15 @@ export const useData = () => {
 };
 
 export const DataProvider = ({ children }: { children: ReactNode }) => {
-  const [users, setUsers] = useState<User[]>([]);
+  const [currentUser, setCurrentUser] = useState<User | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [currentQuestion, setCurrentQuestion] = useState<Question | null>(null);
   const [isDataLoading, setIsDataLoading] = useState(true);
   const [isInitialLoadComplete, setIsInitialLoadComplete] = useState(false);
-  const { currentUser: user } = useAuthContext();
+  const { currentUser: user } = useAuthContext() as { currentUser: any };
 
   useEffect(() => {
-    if (!user) return;
+    if (!user || !user.uid) return;
 
     if (!isInitialLoadComplete) {
       setIsDataLoading(true);
@@ -43,13 +43,17 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
     let userDataReceived = false;
     let questionDataReceived = false;
 
-    // Subscribe to users
-    unsubscribeUsers = onSnapshot(collection(db, 'users'), (snapshot) => {
-      const userData: User[] = snapshot.docs.map((doc) => ({
-        ...(doc.data() as User),
-        uid: doc.id,
-      }));
-      setUsers(userData);
+    // Subscribe to current user's document only
+    unsubscribeUsers = onSnapshot(doc(db, 'users', user.uid), (snapshot) => {
+      if (snapshot.exists()) {
+        const userData: User = {
+          ...(snapshot.data() as User),
+          uid: snapshot.id,
+        };
+        setCurrentUser(userData);
+      } else {
+        setCurrentUser(null);
+      }
       
       // Mark user data as received
       userDataReceived = true;
@@ -60,13 +64,14 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         setIsDataLoading(false);
       }
     }, error => {
-      console.error("Error listening to users collection:", error);
+      console.error("Error listening to user document:", error);
       setIsDataLoading(false);
       setIsInitialLoadComplete(true);
     });
 
-    // Subscribe to questions
-    unsubscribeQuestions = onSnapshot(collection(db, 'questions'), (snapshot) => {
+    // Subscribe to ACTIVE questions only
+    const activeQuestionsQuery = query(collection(db, 'questions'), where('active', '==', true));
+    unsubscribeQuestions = onSnapshot(activeQuestionsQuery, (snapshot) => {
       const questionData = snapshot.docs.map((doc) => ({
         ...(doc.data() as Question),
         questionId: doc.id,
@@ -84,7 +89,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
         setIsDataLoading(false);
       }
     }, error => {
-      console.error("Error listening to questions collection:", error);
+      console.error("Error listening to questions:", error);
       setIsDataLoading(false);
       setIsInitialLoadComplete(true);
     });
@@ -96,7 +101,7 @@ export const DataProvider = ({ children }: { children: ReactNode }) => {
   }, [user, isInitialLoadComplete]);
 
   return (
-    <DataContext.Provider value={{ users, questions, currentQuestion, isDataLoading }}>
+    <DataContext.Provider value={{ currentUser, questions, currentQuestion, isDataLoading }}>
       {children}
     </DataContext.Provider>
   );
